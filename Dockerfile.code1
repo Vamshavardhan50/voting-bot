@@ -1,0 +1,9 @@
+FROM mcr.microsoft.com/playwright/python:v1.44.0-noble
+
+WORKDIR /app
+
+COPY . /app
+
+RUN pip install --no-cache-dir tqdm
+
+CMD ["python", "-u", "code.py"]
