@@ -373,12 +373,6 @@ from playwright.async_api import async_playwright
 async def run_single_session(i, browser, stats):
     device = generate_device()
     proxy = next_proxy()
-    proxy_display = proxy["server"] if proxy else "NO PROXY"
-
-    print(f"\n{'='*50}")
-    print(f"🔹 Session {i + 1}/{TOTAL_SESSIONS} [Started]")
-    print(f"  📱 Device: {device['name']} ({device['type']})")
-    print(f"  🌐 Proxy: {proxy_display}")
 
     context_args = {
         "user_agent": device["user_agent"],
@@ -394,7 +388,6 @@ async def run_single_session(i, browser, stats):
         context = await browser.new_context(**context_args)
         page = await context.new_page()
 
-        # --- block heavy resources for faster loading ---
         if BLOCK_RESOURCES:
             async def block_route(route):
                 if route.request.resource_type in BLOCKED_RESOURCE_TYPES:
@@ -405,52 +398,39 @@ async def run_single_session(i, browser, stats):
 
         def on_framenavigated(frame):
             if frame == page.main_frame and "app.hidevs.xyz/login" in frame.url:
-                print(f"[{i+1}]  ⚠️ Redirected to login. Closing context.")
-                # We can't await inside sync event handler, so we fire and forget
                 asyncio.create_task(context.close())
                 
         page.on("framenavigated", on_framenavigated)
 
-        # ---- OPEN PAGE ----
         await page.goto(URL, wait_until="domcontentloaded", timeout=60000)
         await asyncio.sleep(random.uniform(1.5, 3))
 
-        # ---- CAST VOTE (Async version) ----
-        print(f"[{i+1}]  ⏳ Waiting for page to fully load...")
         try:
             await page.wait_for_load_state("networkidle", timeout=60000)
         except:
             pass
         await asyncio.sleep(random.uniform(2, 4))
-        print(f"[{i+1}]  ✅ Page loaded.")
 
-        # --- Check for "Nomination not found" and refresh once ---
         try:
-            # Look for the text anywhere on the page
             not_found = page.locator('text=/Nomination not found/i').first
             if await not_found.is_visible(timeout=2000):
-                print(f"[{i+1}]  ⚠️ 'Nomination not found' detected. Refreshing page once...")
                 await page.reload(wait_until="domcontentloaded", timeout=60000)
                 try:
                     await page.wait_for_load_state("networkidle", timeout=60000)
                 except:
                     pass
                 await asyncio.sleep(random.uniform(2, 4))
-                print(f"[{i+1}]  ✅ Page reloaded.")
         except:
-            pass # Timeout or other error means it's not visible, which is fine
+            pass
 
-        # --- check for "Sign In" instead of voting ---
         try:
             sign_in_loc = page.locator('text=/Sign In/i').first
             await sign_in_loc.wait_for(state="visible", timeout=2000)
-            print(f"[{i+1}]  ⚠️ 'Sign In' detected instead of vote button. Aborting.")
             raise Exception("Sign In page detected")
         except Exception as e:
             if str(e) == "Sign In page detected":
                 raise e
 
-        # --- find the "Cast your vote" button ---
         btn = page.locator('button:has-text("Cast your vote")')
         try:
             await btn.wait_for(state="visible", timeout=5000)
@@ -469,13 +449,11 @@ async def run_single_session(i, browser, stats):
                 except:
                     continue
             else:
-                print(f"[{i+1}]  ⚠️  'Cast your vote' button not found!")
                 stats["fail"] += 1
                 await context.close()
                 return
 
         if await btn.is_disabled():
-            print(f"[{i+1}]  ⚠️  Button is DISABLED — may have already voted")
             stats["fail"] += 1
             await context.close()
             return
@@ -483,23 +461,17 @@ async def run_single_session(i, browser, stats):
         await btn.scroll_into_view_if_needed()
         await asyncio.sleep(random.uniform(0.5, 1.5))
         await btn.click(force=True)
-        print(f"[{i+1}]  🗳️  Clicked 'Cast your vote'!")
-        
-        # We don't try to read vote counts in concurrent mode to avoid complex page evals,
-        # just assume success if click didn't throw
         await asyncio.sleep(random.uniform(1, 2))
         
         stats["success"] += 1
-        print(f"[{i+1}]  🎉 Vote submitted successfully!")
-
         await context.close()
     except Exception as e:
         stats["fail"] += 1
-        print(f"[{i+1}]  ❌ Error: {e}")
         try:
             await context.close()
         except:
             pass
+
 
 async def run_voting():
     global TOTAL_SESSIONS, PROXY_POOL

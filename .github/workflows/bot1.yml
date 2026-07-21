@@ -1,7 +1,7 @@
 name: Run Voting Bot 1 (code.py)
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch: # Allows manual trigger anytime
   schedule:
     - cron: '*/30 * * * *' # Runs automatically every 30 minutes
 
@@ -25,5 +25,7 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Run code.py
+        env:
+          PYTHONUNBUFFERED: "1"
         run: |
-          python code.py
+          python -u code.py
