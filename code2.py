@@ -151,48 +151,20 @@ def fetch_free_proxies():
     except Exception as e:
         print(f"[proxy] proxyscrape failed: {e}")
 
-    import sys
-    try:
-        from tqdm import tqdm
-    except ImportError:
-        print("[proxy] tqdm not found. Run 'pip install tqdm' for a loading bar.")
-        tqdm = None
-
-    print(f"[proxy] Scraped {len(raw_proxies)} potential proxies. Testing for live ones...")
+    print(f"[proxy] Fetching and testing proxies...")
     proxies = []
     
-    from concurrent.futures import as_completed
     with ThreadPoolExecutor(max_workers=50) as executor:
-        # Submit all tasks
-        future_to_proxy = {executor.submit(check_proxy, proxy): proxy for proxy in raw_proxies}
-        
-        # Setup progress bar if tqdm is available
-        if tqdm:
-            completed = 0
-            # Custom format to show live proxies found during testing
-            pbar = tqdm(total=len(raw_proxies), desc="Testing proxies", 
-                        bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [Live: {postfix}]")
-            pbar.set_postfix_str("0")
-            
-            for future in as_completed(future_to_proxy):
-                res = future.result()
-                if res:
-                    proxies.append(res)
-                    pbar.set_postfix_str(str(len(proxies)))
-                pbar.update(1)
-            pbar.close()
-        else:
-            # Fallback if tqdm isn't installed, just wait for them to finish
-            results = executor.map(check_proxy, raw_proxies)
-            for res in results:
-                if res:
-                    proxies.append(res)
+        results = executor.map(check_proxy, raw_proxies)
+        for res in results:
+            if res:
+                proxies.append(res)
 
     if proxies:
         random.shuffle(proxies)
-        print(f"[proxy] Kept {len(proxies)} LIVE proxies")
+        print(f"[proxy] Found {len(proxies)} live proxies.")
     else:
-        print("[proxy] No live proxies found")
+        print("[proxy] No live proxies found.")
 
     return proxies
 
@@ -498,10 +470,7 @@ async def run_voting():
             print(f"[config] TOTAL_SESSIONS set to {TOTAL_SESSIONS} to match live proxies.")
 
         async with async_playwright() as p:
-            print(f"\n🚀 Launching Browser (Headless: {HEADLESS})...")
             browser = await p.chromium.launch(headless=HEADLESS, slow_mo=30)
-            
-            print(f"⚡ Starting {TOTAL_SESSIONS} sessions with concurrency: {CONCURRENT_BROWSERS}")
             
             for i in range(0, TOTAL_SESSIONS, CONCURRENT_BROWSERS):
                 batch_size = min(CONCURRENT_BROWSERS, TOTAL_SESSIONS - i)
@@ -511,13 +480,10 @@ async def run_voting():
                     session_idx = i + j
                     tasks.append(run_single_session(session_idx, browser, stats))
                 
-                print(f"\n🔄 Running batch of {batch_size} sessions...")
                 await asyncio.gather(*tasks)
                 
                 if i + batch_size < TOTAL_SESSIONS:
-                    delay = random.uniform(1, 3)
-                    print(f"  ⏳ Waiting {delay:.1f}s before next batch...")
-                    await asyncio.sleep(delay)
+                    await asyncio.sleep(random.uniform(1, 3))
 
             await browser.close()
 
